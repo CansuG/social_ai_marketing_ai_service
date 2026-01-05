@@ -1,16 +1,13 @@
 from pydantic import BaseModel, Field
 
-class CheckRequest(BaseModel):
-    conversation_id: str = Field(..., description="Instagram conversation / entry id")
+class EnsureConversationRequest(BaseModel):
+    customer_number: str = Field(..., description="Customer identifier (e.g., Instagram sender.id)")
+    seller_external_id: str = Field(..., description="Seller identifier (e.g., Instagram entry.id or recipient.id)")
+    channel: str = Field("instagram", description="Channel name")
 
-class CheckResponse(BaseModel):
-    conversation_id: str
+class EnsureConversationResponse(BaseModel):
     exists: bool
-
-class UpsertResponse(BaseModel):
-    conversation_id: str
-    created: bool  # True: yeni eklendi, False: zaten vardı (update)
-
-class DeleteResponse(BaseModel):
-    conversation_id: str
-    deleted: bool
+    conversation_db_id: int
+    customer_number: str
+    channel: str
+    channel_thread_id: str

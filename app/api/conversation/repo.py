@@ -1,33 +1,46 @@
-from typing import Set
+from typing import Optional
+from sqlalchemy import text
+from app.db import get_engine
 
-KNOWN_TRUE_CONVERSATION_ID = "17841478128416550"
-
-# ⚠️ Mock "DB": process restart olunca sıfırlanır.
-MOCK_CONVERSATION_IDS: Set[str] = {
-    KNOWN_TRUE_CONVERSATION_ID,
-    "1001",
-    "1002",
-}
+SCHEMA_CHAT = "u9105298_social.chat"
 
 class ConversationRepository:
-    def exists(self, conversation_id: str) -> bool:
-        return conversation_id in MOCK_CONVERSATION_IDS
+    def __init__(self):
+        self.engine = get_engine()
+        self.conversations = f"{SCHEMA_CHAT}.conversations"
 
-    def upsert(self, conversation_id: str) -> bool:
-        """
-        Returns:
-          created: True  -> yeni eklendi
-          created: False -> zaten vardı (update gibi düşün)
-        """
-        created = conversation_id not in MOCK_CONVERSATION_IDS
-        MOCK_CONVERSATION_IDS.add(conversation_id)
-        return created
+    def find_by_thread(self, channel: str, channel_thread_id: str) -> Optional[int]:
+        sql = text(f"""
+            SELECT TOP 1 conversation_id
+            FROM {self.conversations}
+            WHERE channel = :channel
+              AND channel_thread_id = :thread_id
+        """)
+        with self.engine.connect() as conn:
+            row = conn.execute(sql, {"channel": channel, "thread_id": channel_thread_id}).first()
+            return int(row[0]) if row else None
 
-    def delete(self, conversation_id: str) -> bool:
-        if conversation_id in MOCK_CONVERSATION_IDS:
-            MOCK_CONVERSATION_IDS.remove(conversation_id)
-            return True
-        return False
+    def insert(self, customer_number: str, channel: str, channel_thread_id: str) -> int:
+        sql = text(f"""
+            INSERT INTO {self.conversations}
+              (customer_number, channel, channel_thread_id, status, created_at, updated_at)
+            OUTPUT INSERTED.conversation_id
+            VALUES
+              (:customer_number, :channel, :thread_id, 'open', SYSUTCDATETIME(), SYSUTCDATETIME())
+        """)
+        with self.engine.begin() as conn:
+            conv_id = conn.execute(sql, {
+                "customer_number": customer_number,
+                "channel": channel,
+                "thread_id": channel_thread_id,
+            }).scalar_one()
+            return int(conv_id)
 
-    def list_all(self) -> list[str]:
-        return sorted(MOCK_CONVERSATION_IDS)
+    def touch(self, conversation_id: int) -> None:
+        sql = text(f"""
+            UPDATE {self.conversations}
+            SET updated_at = SYSUTCDATETIME()
+            WHERE conversation_id = :conversation_id
+        """)
+        with self.engine.begin() as conn:
+            conn.execute(sql, {"conversation_id": conversation_id})
